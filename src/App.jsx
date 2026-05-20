@@ -13,7 +13,7 @@ function App() {
               <Layers className="w-6 h-6 text-white" />
             </div>
             <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-teal-400">
-              AI Background Effects
+              Realtime AI Webcam Studio
             </h1>
           </div>
           <div className="text-sm text-gray-400 hidden sm:block">
@@ -36,7 +36,7 @@ function App() {
       
       {/* Footer */}
       <footer className="w-full p-4text-center text-gray-500 text-sm py-6 mt-auto">
-        Powered by React, Vite, and MediaPipe Selfie Segmentation.
+          | © 2026 Syed Khubayb Ur Rahman. All rights reserved.
       </footer>
     </div>
   );
