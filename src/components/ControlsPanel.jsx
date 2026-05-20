@@ -1,51 +1,143 @@
 import React from 'react';
-import { Video, Image as ImageIcon, Droplets } from 'lucide-react';
+import {
+  Camera as CameraIcon,
+  Expand,
+  FlipHorizontal,
+  Frame,
+  Gauge,
+  ImageDown,
+  Mic2,
+  RotateCcw,
+  SlidersHorizontal
+} from 'lucide-react';
+import { PRESET_MODES } from '../utils/filters';
 
-export function ControlsPanel({ backgroundConfig, setBackgroundConfig }) {
-  
-  const handleBlurChange = (e) => {
-    setBackgroundConfig({ type: 'blur', blurAmount: parseInt(e.target.value, 10) });
-  };
-  
+const RESOLUTIONS = [
+  { id: 'auto', label: 'Auto' },
+  { id: '720p', label: '720p' },
+  { id: '1080p', label: '1080p' }
+];
+
+function ToggleButton({ active, disabled, icon: Icon, label, onClick }) {
   return (
-    <div className="bg-gray-800 rounded-xl p-5 shadow-lg border border-gray-700">
-      <h3 className="font-semibold text-gray-200 mb-4 flex items-center gap-2">
-        <Video className="w-4 h-4" /> Background Effects
-      </h3>
-      
-      <div className="flex flex-col gap-3">
-        <button 
-          onClick={() => setBackgroundConfig({ type: 'none', value: null })}
-          className={`p-3 rounded-lg flex items-center gap-3 transition-colors ${backgroundConfig.type === 'none' ? 'bg-blue-600/20 border border-blue-500 text-blue-400' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
-        >
-          <Video className="w-5 h-5" />
-          <span>Original Video</span>
-        </button>
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`control-button ${active ? 'control-button-active' : ''}`}
+      title={label}
+    >
+      <Icon className="h-4 w-4" />
+      <span>{label}</span>
+    </button>
+  );
+}
 
-        <div className={`p-3 rounded-lg border ${backgroundConfig.type === 'blur' ? 'bg-blue-600/20 border-blue-500' : 'bg-gray-700 border-transparent hover:bg-gray-600'}`}>
-          <button 
-            onClick={() => setBackgroundConfig({ type: 'blur', blurAmount: backgroundConfig.blurAmount || 10 })}
-            className="w-full flex items-center gap-3 text-left mb-2 text-gray-300"
-          >
-            <Droplets className="w-5 h-5 text-current" />
-            <span>Blur Background</span>
-          </button>
-          
-          {backgroundConfig.type === 'blur' && (
-            <div className="mt-4 px-2">
-              <label className="text-xs text-gray-400 block mb-2">Blur Amount: {backgroundConfig.blurAmount}px</label>
-              <input 
-                type="range" 
-                min="2" 
-                max="25"
-                value={backgroundConfig.blurAmount || 10}
-                onChange={handleBlurChange}
-                className="w-full"
-              />
-            </div>
-          )}
+export function ControlsPanel({
+  effects,
+  setEffects,
+  resolution,
+  setResolution,
+  renderFps,
+  onScreenshot,
+  onFullscreen,
+  isRecording
+}) {
+  const updateEffects = (patch) => {
+    setEffects((current) => ({
+      ...current,
+      ...patch
+    }));
+  };
+
+  const applyPreset = (preset) => {
+    setEffects((current) => ({
+      ...current,
+      ...preset.settings
+    }));
+  };
+
+  return (
+    <section className="studio-panel">
+      <div className="panel-heading">
+        <span className="panel-icon">
+          <SlidersHorizontal className="h-4 w-4" />
+        </span>
+        <div>
+          <h2>Camera Studio</h2>
+          <p>Professional preview controls</p>
         </div>
       </div>
-    </div>
+
+      <div className="control-grid">
+        <ToggleButton
+          active={effects.mirror}
+          icon={FlipHorizontal}
+          label="Mirror"
+          onClick={() => updateEffects({ mirror: !effects.mirror })}
+        />
+        <ToggleButton
+          active={effects.autoFraming}
+          icon={Frame}
+          label="Auto frame"
+          onClick={() => updateEffects({ autoFraming: !effects.autoFraming })}
+        />
+        <ToggleButton
+          active={effects.beforeAfter}
+          disabled={isRecording}
+          icon={Gauge}
+          label="Compare"
+          onClick={() => updateEffects({ beforeAfter: !effects.beforeAfter })}
+        />
+        <ToggleButton
+          active={effects.noiseSuppression}
+          icon={Mic2}
+          label="Noise"
+          onClick={() => updateEffects({ noiseSuppression: !effects.noiseSuppression })}
+        />
+      </div>
+
+      <div className="segmented-control" aria-label="Webcam resolution">
+        {RESOLUTIONS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setResolution(item.id)}
+            className={resolution === item.id ? 'active' : ''}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="action-row">
+        <button type="button" className="icon-action" onClick={onScreenshot} title="Capture screenshot">
+          <ImageDown className="h-4 w-4" />
+          <span>Shot</span>
+        </button>
+        <button type="button" className="icon-action" onClick={onFullscreen} title="Fullscreen preview">
+          <Expand className="h-4 w-4" />
+          <span>Full</span>
+        </button>
+        <div className="fps-pill" title="Canvas render FPS">
+          <CameraIcon className="h-4 w-4" />
+          <span>{renderFps || '--'} FPS</span>
+        </div>
+      </div>
+
+      <div className="preset-list">
+        {PRESET_MODES.map((preset) => (
+          <button
+            key={preset.id}
+            type="button"
+            className="preset-button"
+            onClick={() => applyPreset(preset)}
+          >
+            <span>{preset.name}</span>
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }

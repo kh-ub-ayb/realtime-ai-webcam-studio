@@ -1,107 +1,320 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Loader2, Radio, ShieldCheck, Sparkles } from 'lucide-react';
 import { useCamera } from '../hooks/useCamera';
+import { useRecorder } from '../hooks/useRecorder';
 import { useSegmentation } from '../hooks/useSegmentation';
-import { VideoCanvas } from './VideoCanvas';
 import { BackgroundSelector } from './BackgroundSelector';
+import { ColorPickerPanel } from './ColorPickerPanel';
 import { ControlsPanel } from './ControlsPanel';
-import { Loader2 } from 'lucide-react';
+import { EffectsPanel } from './EffectsPanel';
+import { FiltersPanel } from './FiltersPanel';
+import { RecordingPanel } from './RecordingPanel';
+import { VideoCanvas } from './VideoCanvas';
+import { captureCanvasImage } from '../utils/rendering';
+import { createRecordingFileName, downloadBlob, formatRecordingTime } from '../utils/recording';
+
+const DEFAULT_EFFECTS = {
+  brightness: 0,
+  contrast: 0,
+  saturation: 0,
+  sharpness: 0,
+  beautifyEnabled: false,
+  beautifyStrength: 18,
+  lightingEnabled: true,
+  lightingIntensity: 26,
+  autoLighting: false,
+  filter: 'none',
+  mirror: true,
+  beforeAfter: false,
+  autoFraming: false,
+  noiseSuppression: true,
+  overlayEnabled: false,
+  overlayColor: '#2563eb',
+  overlayAlpha: 0.12,
+  backgroundBlurStrength: 18
+};
 
 export function Camera() {
-  const { stream, error, isLoading, videoRef } = useCamera();
-  const [backgroundConfig, setBackgroundConfig] = useState({ type: 'none', value: null, blurAmount: 10 });
-  const [backgroundImage, setBackgroundImage] = useState(null);
-  const [latestResults, setLatestResults] = useState(null);
-  
-  const frameIdRef = useRef();
+  const [resolution, setResolution] = useState('720p');
+  const { stream, error, isLoading, videoRef } = useCamera(resolution);
+  const recorder = useRecorder();
+  const [backgroundConfig, setBackgroundConfigState] = useState({
+    type: 'blur',
+    value: null,
+    blurAmount: 18
+  });
+  const [backgroundMedia, setBackgroundMedia] = useState({ image: null, video: null });
+  const [effects, setEffects] = useState(DEFAULT_EFFECTS);
+  const [selectedColor, setSelectedColor] = useState('#2563eb');
+  const [recentColors, setRecentColors] = useState([]);
+  const [renderFps, setRenderFps] = useState(0);
+  const [hasSegmentationMask, setHasSegmentationMask] = useState(false);
+  const [recordingOptions, setRecordingOptions] = useState({
+    fps: 30,
+    quality: 'standard',
+    maxDurationSeconds: 0
+  });
+  const [captureError, setCaptureError] = useState('');
 
-  // Handle results from MediaPipe
+  const canvasRef = useRef(null);
+  const previewShellRef = useRef(null);
+  const frameIdRef = useRef(0);
+  const segmentationResultsRef = useRef(null);
+  const hasSegmentationMaskRef = useRef(false);
+  const objectUrlRef = useRef('');
+
+  const setBackgroundConfig = useCallback((nextValue) => {
+    setBackgroundConfigState((current) => {
+      const next = typeof nextValue === 'function' ? nextValue(current) : nextValue;
+
+      if (objectUrlRef.current && current.value === objectUrlRef.current && next.value !== objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = '';
+      }
+
+      return next;
+    });
+  }, []);
+
   const onResults = useCallback((results) => {
-    setLatestResults(results);
+    segmentationResultsRef.current = results;
+
+    if (!hasSegmentationMaskRef.current) {
+      hasSegmentationMaskRef.current = true;
+      setHasSegmentationMask(true);
+    }
   }, []);
 
   const { isModelLoading, modelError, sendFrame } = useSegmentation(onResults);
 
-  // Video processing loop
   useEffect(() => {
     if (isModelLoading || error || modelError || !stream) return;
 
-    const renderLoop = async () => {
-      if (videoRef.current && videoRef.current.readyState === 4) {
+    const renderSegmentationLoop = async () => {
+      if (videoRef.current?.readyState === 4) {
         await sendFrame(videoRef.current);
       }
-      frameIdRef.current = requestAnimationFrame(renderLoop);
+
+      frameIdRef.current = requestAnimationFrame(renderSegmentationLoop);
     };
 
-    frameIdRef.current = requestAnimationFrame(renderLoop);
+    frameIdRef.current = requestAnimationFrame(renderSegmentationLoop);
 
     return () => {
       if (frameIdRef.current) {
         cancelAnimationFrame(frameIdRef.current);
       }
     };
-  }, [isModelLoading, error, modelError, stream, sendFrame]);
+  }, [isModelLoading, error, modelError, stream, sendFrame, videoRef]);
 
-  // Load custom background image
   useEffect(() => {
-    if (backgroundConfig.type === 'image' && backgroundConfig.value) {
-      const img = new Image();
-      img.onload = () => setBackgroundImage(img);
-      img.src = backgroundConfig.value;
-    } else {
-      setBackgroundImage(null);
+    let cancelled = false;
+    let backgroundVideo;
+    const { type, value } = backgroundConfig;
+
+    setBackgroundMedia({ image: null, video: null });
+
+    if (type === 'image' && value) {
+      const image = new Image();
+      image.onload = () => {
+        if (!cancelled) {
+          setBackgroundMedia({ image, video: null });
+        }
+      };
+      image.src = value;
     }
+
+    if (type === 'video' && value) {
+      backgroundVideo = document.createElement('video');
+      backgroundVideo.src = value;
+      backgroundVideo.loop = true;
+      backgroundVideo.muted = true;
+      backgroundVideo.playsInline = true;
+      backgroundVideo.onloadeddata = () => {
+        if (!cancelled) {
+          setBackgroundMedia({ image: null, video: backgroundVideo });
+          backgroundVideo.play().catch(() => {});
+        }
+      };
+    }
+
+    return () => {
+      cancelled = true;
+      if (backgroundVideo) {
+        backgroundVideo.pause();
+        backgroundVideo.removeAttribute('src');
+        backgroundVideo.load();
+      }
+    };
   }, [backgroundConfig]);
 
+  useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+      }
+    };
+  }, []);
+
+  const handleBackgroundFile = useCallback((file) => {
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+    }
+
+    const url = URL.createObjectURL(file);
+    objectUrlRef.current = url;
+    setBackgroundConfigState({
+      type: file.type.startsWith('video/') ? 'video' : 'image',
+      value: url,
+      blurAmount: backgroundConfig.blurAmount || 18
+    });
+  }, [backgroundConfig.blurAmount]);
+
+  const studioSettings = useMemo(() => ({
+    ...effects,
+    recordingActive: recorder.isRecording,
+    backgroundBlurStrength: backgroundConfig.blurAmount || effects.backgroundBlurStrength,
+    overlayColor: effects.overlayColor || selectedColor.slice(0, 7)
+  }), [backgroundConfig.blurAmount, effects, recorder.isRecording, selectedColor]);
+
+  const maxCanvasWidth = resolution === '1080p' ? 1920 : 1280;
+
+  const startRecording = useCallback(() => {
+    setEffects((current) => current.beforeAfter ? { ...current, beforeAfter: false } : current);
+    recorder.startRecording(canvasRef.current, {
+      ...recordingOptions,
+      noiseSuppression: effects.noiseSuppression
+    });
+  }, [effects.noiseSuppression, recorder, recordingOptions]);
+
+  const captureScreenshot = useCallback(async () => {
+    setCaptureError('');
+
+    try {
+      const blob = await captureCanvasImage(canvasRef.current);
+      downloadBlob(blob, createRecordingFileName('png'));
+    } catch (screenError) {
+      setCaptureError(screenError?.message || 'Unable to capture screenshot.');
+    }
+  }, []);
+
+  const enterFullscreen = useCallback(() => {
+    previewShellRef.current?.requestFullscreen?.();
+  }, []);
+
   if (error) {
-    return <div className="text-red-500 p-4 rounded bg-red-900/20 max-w-lg mx-auto mt-10 text-center">{error}</div>;
+    return <div className="surface-message error">{error}</div>;
   }
-  
+
   if (modelError) {
-    return <div className="text-red-500 p-4 rounded bg-red-900/20 max-w-lg mx-auto mt-10 text-center">{modelError}</div>;
+    return <div className="surface-message error">{modelError}</div>;
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 max-w-6xl mx-auto w-full">
-      <div className="flex-1 flex flex-col gap-4">
-        <div className="relative aspect-video bg-gray-900 rounded-xl overflow-hidden shadow-2xl border border-gray-800">
-          
-          {/* Hidden video element used for stream source */}
-          <video 
-            ref={videoRef} 
-            className="hidden" 
-            playsInline 
-            autoPlay 
+    <div className="studio-layout">
+      <section className="preview-column">
+        <div className="studio-titlebar">
+          <div>
+            <span className="eyebrow">AI Webcam Studio</span>
+            <h1>Realtime camera enhancement</h1>
+          </div>
+          <div className="status-strip">
+            <span className={hasSegmentationMask ? 'status-pill online' : 'status-pill'}>
+              <ShieldCheck className="h-4 w-4" />
+              {hasSegmentationMask ? 'AI mask live' : 'AI warming up'}
+            </span>
+            <span className={recorder.isRecording ? 'status-pill recording' : 'status-pill'}>
+              <Radio className="h-4 w-4" />
+              {recorder.isRecording ? formatRecordingTime(recorder.elapsedMs) : 'Recorder ready'}
+            </span>
+          </div>
+        </div>
+
+        <div ref={previewShellRef} className="preview-shell">
+          <video
+            ref={videoRef}
+            className="hidden"
+            playsInline
+            autoPlay
             muted
           />
 
-          {/* Loading States */}
           {(isLoading || isModelLoading) && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 z-10 text-gray-400">
-              <Loader2 className="w-10 h-10 animate-spin mb-4 text-blue-500" />
-              <p>{isLoading ? 'Starting camera...' : 'Loading AI model...'}</p>
+            <div className="loading-overlay">
+              <Loader2 className="h-10 w-10 animate-spin text-cyan-300" />
+              <span>{isLoading ? 'Starting camera...' : 'Loading AI segmentation...'}</span>
             </div>
           )}
 
-          {/* Main output canvas */}
-          <VideoCanvas 
-            videoRef={videoRef}
-            results={latestResults}
-            backgroundConfig={backgroundConfig}
-            backgroundImage={backgroundImage}
-          />
-        </div>
-      </div>
+          {recorder.isRecording && (
+            <div className="recording-badge">
+              <span />
+              REC {formatRecordingTime(recorder.elapsedMs)}
+            </div>
+          )}
 
-      <div className="w-full lg:w-80 flex flex-col gap-6">
-        <ControlsPanel 
-          backgroundConfig={backgroundConfig} 
-          setBackgroundConfig={setBackgroundConfig} 
+          <VideoCanvas
+            ref={canvasRef}
+            videoRef={videoRef}
+            segmentationResultsRef={segmentationResultsRef}
+            backgroundConfig={backgroundConfig}
+            backgroundMedia={backgroundMedia}
+            studioSettings={studioSettings}
+            maxCanvasWidth={maxCanvasWidth}
+            onFpsChange={setRenderFps}
+          />
+
+          <div className="preview-footer">
+            <span><Sparkles className="h-4 w-4" /> Final composited canvas</span>
+            <span>{backgroundConfig.type}</span>
+          </div>
+        </div>
+
+        {(captureError || recorder.error) && (
+          <div className="surface-message compact">{captureError || recorder.error}</div>
+        )}
+      </section>
+
+      <aside className="settings-sidebar hide-scrollbar">
+        <ControlsPanel
+          effects={effects}
+          setEffects={setEffects}
+          resolution={resolution}
+          setResolution={setResolution}
+          renderFps={renderFps}
+          onScreenshot={captureScreenshot}
+          onFullscreen={enterFullscreen}
+          isRecording={recorder.isRecording}
         />
-        <BackgroundSelector 
-          backgroundConfig={backgroundConfig} 
-          setBackgroundConfig={setBackgroundConfig} 
+        <RecordingPanel
+          recorder={recorder}
+          options={recordingOptions}
+          setOptions={setRecordingOptions}
+          onStart={startRecording}
         />
-      </div>
+        <EffectsPanel
+          effects={effects}
+          setEffects={setEffects}
+          backgroundConfig={backgroundConfig}
+          setBackgroundConfig={setBackgroundConfig}
+        />
+        <FiltersPanel effects={effects} setEffects={setEffects} />
+        <BackgroundSelector
+          backgroundConfig={backgroundConfig}
+          setBackgroundConfig={setBackgroundConfig}
+          onBackgroundFile={handleBackgroundFile}
+          selectedColor={selectedColor}
+        />
+        <ColorPickerPanel
+          color={selectedColor}
+          setColor={setSelectedColor}
+          recentColors={recentColors}
+          setRecentColors={setRecentColors}
+          setBackgroundConfig={setBackgroundConfig}
+          effects={effects}
+          setEffects={setEffects}
+        />
+      </aside>
     </div>
   );
 }

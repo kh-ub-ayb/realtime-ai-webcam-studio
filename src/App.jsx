@@ -1,42 +1,34 @@
 import React from 'react';
 import { Camera } from './components/Camera';
-import { Layers } from 'lucide-react';
+import { Layers, RadioTower } from 'lucide-react';
 
 function App() {
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center">
-      {/* Header */}
-      <header className="w-full bg-gray-800 shadow-md border-b border-gray-700 p-4 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
+    <div className="app-shell min-h-screen text-slate-100">
+      <header className="app-header">
+        <div className="mx-auto flex w-full max-w-[1540px] items-center justify-between px-4 py-3 md:px-6">
           <div className="flex items-center gap-3">
-            <div className="bg-blue-600 p-2 rounded-lg">
-              <Layers className="w-6 h-6 text-white" />
+            <div className="brand-mark">
+              <Layers className="h-5 w-5 text-white" />
             </div>
-            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-teal-400">
-              Realtime AI Webcam Studio
-            </h1>
+            <div>
+              <p className="brand-kicker">Browser-native AI camera</p>
+              <h1 className="brand-title">Realtime AI Webcam Studio</h1>
+            </div>
           </div>
-          <div className="text-sm text-gray-400 hidden sm:block">
-            Real-time Browser Compositing
+          <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300 sm:flex">
+            <RadioTower className="h-4 w-4 text-emerald-300" />
+            Canvas, MediaPipe, MediaRecorder
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="w-full p-4 md:p-8 flex-1 flex flex-col items-center justify-start max-w-7xl mx-auto">
-        <div className="w-full mb-6">
-          <h2 className="text-3xl font-semibold mb-2 text-white">Workspace Preview</h2>
-          <p className="text-gray-400 text-sm">
-            Everything runs locally in your browser using MediaPipe and Canvas API.
-          </p>
-        </div>
-        
+      <main className="mx-auto flex w-full max-w-[1540px] flex-1 px-4 py-5 md:px-6 md:py-7">
         <Camera />
       </main>
-      
-      {/* Footer */}
-      <footer className="w-full p-4text-center text-gray-500 text-sm py-6 mt-auto">
-          | © 2026 Syed Khubayb Ur Rahman. All rights reserved.
+
+      <footer className="mx-auto w-full max-w-[1540px] px-4 pb-5 text-center text-xs text-slate-500 md:px-6">
+        © 2026 Syed Khubayb Ur Rahman. All rights reserved.
       </footer>
     </div>
   );
